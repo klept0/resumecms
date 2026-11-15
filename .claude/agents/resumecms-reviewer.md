@@ -118,6 +118,12 @@ in prose; check the diff against the ones that apply, especially:
   (`referencedImageIds()`/`referencedFileIds()` of draft and snapshot).
   A PDF is sent with `nosniff`, `Content-Security-Policy: sandbox` and a
   `Content-Disposition` from `contentDisposition()`, never a raw name.
+- 2FA: a setup is only `pendingSecret` until `/confirm` verifies a code
+  from it, and Cancel drops it server-side (`/cancel`); turning 2FA on needs the current password, and replacing or
+  disabling an active factor the password and an unused code, checked
+  server-side and rate-limited, with one failure message. A route that
+  checks a code (login too) re-reads the row after its awaits and writes
+  only if the factor is unchanged and the code still unspent.
 - `RESUMECMS_SESSION_SECRET` never gets a default (in `index.js`,
   `docker-compose.yml` or an example): the boot refuses a missing, short or
   placeholder one through `checkSessionSecret()`, before `db.js` loads; a
