@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Runs the local checks for the worktree this script is in: the template
-# validator, both packages' tests and the client build, stopping at the
-# first failure. It never touches Docker or a running service; to deploy,
+# validator, both packages' tests, lint and type checks, and the client
+# build, stopping at the first failure. It never touches Docker or a running service; to deploy,
 # see scripts/deploy-host.sh.
 #
 # Needs `npm ci` in server/ and client/ first.
@@ -29,11 +29,12 @@ step() {
 step "node scripts/validate-templates.mjs"
 (cd "$root" && node scripts/validate-templates.mjs)
 
-step "npm test (server/)"
-(cd "$root/server" && npm test)
-
-step "npm test (client/)"
-(cd "$root/client" && npm test)
+for pkg in server client; do
+  for script in test lint typecheck; do
+    step "npm run $script ($pkg/)"
+    (cd "$root/$pkg" && npm run "$script")
+  done
+done
 
 step "npm run build (client/)"
 (cd "$root/client" && npm run build)
