@@ -48,8 +48,9 @@ just describe what changed and why, and how you tested it.
 
 A PR can only merge into `main` once CI's `ci-passed` check is green. CI
 runs the server tests, the client tests and build, each package's lint
-and type check, the template validator, and a Docker build, each only
-when the PR touches its part.
+and type check, a browser suite that drives the editor in headless
+Chromium, the template validator, and a Docker build, each only when the
+PR touches its part.
 
 PRs are squash-merged (the only merge method `main` allows), and the PR
 title becomes the commit's title, with the PR's commit messages as its
@@ -69,6 +70,7 @@ release, a `Release-As: x.y.z` line forces that version, and
 `type: text` lines in the last paragraph become extra changelog
 entries. Leave those out unless you mean them. Run the same locally
 first: `npm test`, `npm run lint` and `npm run typecheck` in `server/`
-and `client/`, and the commands above for templates, or
+and `client/`, `npm run test:browser` in `server/` (after `npm run build`
+in `client/`), and the commands above for templates, or
 `scripts/check.sh`, which runs them all (after `npm ci` in both
 packages).

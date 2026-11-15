@@ -21,4 +21,10 @@ export default [
       reportUnusedDisableDirectives: 'error',
     },
   },
+  // The browser suite (issue #178) hands functions to Puppeteer to run in
+  // the page, so its files use the browser's globals as well as Node's.
+  {
+    files: ['e2e/**/*.js'],
+    languageOptions: { globals: { ...globals.node, ...globals.browser } },
+  },
 ];

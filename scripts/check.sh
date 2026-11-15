@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Runs the local checks for the worktree this script is in: the template
-# validator, both packages' tests, lint and type checks, and the client
-# build, stopping at the first failure. It never touches Docker or a running service; to deploy,
+# validator, both packages' tests, lint and type checks, the client build
+# and the browser suite, stopping at the first failure. It never touches Docker or a running service; to deploy,
 # see scripts/deploy-host.sh.
 #
 # Needs `npm ci` in server/ and client/ first.
@@ -38,6 +38,10 @@ done
 
 step "npm run build (client/)"
 (cd "$root/client" && npm run build)
+
+# The browser suite drives the build just made.
+step "npm run test:browser (server/)"
+(cd "$root/server" && npm run test:browser)
 
 echo
 echo "check: all passed ($root)"
