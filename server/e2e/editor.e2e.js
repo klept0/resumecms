@@ -10,6 +10,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { after, before, test } from 'node:test';
+import { PDFDict, PDFDocument, PDFName } from 'pdf-lib';
 import { PASSWORD, REPO_ROOT, USERNAME, launchBrowser, saveScreenshot, startServer } from './harness.js';
 
 let server;
@@ -97,9 +98,9 @@ async function runFlow(t, page, context, active, name, fn) {
   }
 }
 
-// A page that reaches only the server under test: the pages' Google Fonts
-// would otherwise make the run depend on the network, and a font arriving
-// mid-click moves what the click was aimed at.
+// A page that reaches only the server under test, and loads no web font
+// even from it (the site fonts are self-hosted since issue #221): a font
+// arriving mid-click moves what the click was aimed at.
 async function newPage(context) {
   const page = await context.newPage();
   page.setDefaultTimeout(15000);
@@ -108,7 +109,8 @@ async function newPage(context) {
   page.on('request', (request) => {
     // Either can reject once the page is gone (a reload, the context
     // closing), which is no failure of the flow's.
-    if (request.url().startsWith(`${server.baseUrl}/`) || request.url().startsWith('data:')) request.continue().catch(() => {});
+    const own = request.url().startsWith(`${server.baseUrl}/`) || request.url().startsWith('data:');
+    if (own && request.resourceType() !== 'font') request.continue().catch(() => {});
     else request.abort('blockedbyclient').catch(() => {});
   });
   return page;
@@ -685,4 +687,36 @@ flow('adds a credential, warns on expiry, and preserves its data after reload', 
   const stored = await draftBlock(page, resumeId, block.id);
   assert.deepEqual(stored.data, { kind: 'certification', name: text, issuer: '', number: '', issued: '', expires: 'Jan 2000', url: '' });
   await page.waitForFunction((name) => [...document.querySelectorAll('.r-credential .r-experience-title')].some((el) => el.textContent === name), {}, text);
+});
+
+// Issue #221: the PDF embeds the self-hosted static fonts as TrueType,
+// never as Type3 (what Chromium makes of a variable font, such as Google
+// Fonts serves). The server's own Chromium renders it, so the fonts load
+// there even though this page blocks them. A serif and a sans, each found
+// by name, so a fallback font can't pass for it.
+flow('a published PDF embeds its fonts as TrueType, not Type3', async ({ page }) => {
+  await login(page);
+  const resumeId = await defaultResumeId(page);
+  const { body } = await api(page, `/api/resumes/${resumeId}/site`);
+  for (const [font, name] of [['source-serif', 'SourceSerif4'], ['inter', 'Inter']]) {
+    const put = await api(page, `/api/resumes/${resumeId}/site`, { method: 'PUT', body: JSON.stringify({ ...body.site, font }) });
+    assert.equal(put.status, 200, `${font}: the site setting saves`);
+    const published = await api(page, `/api/resumes/${resumeId}/publish`, { method: 'POST' });
+    assert.equal(published.status, 200, `${font}: publishes`);
+    assert.ok(!published.body.pdfPending, `${font}: the PDF rendered within the publish`);
+    const base64 = await page.evaluate(async (url) => {
+      const bytes = new Uint8Array(await (await fetch(url)).arrayBuffer());
+      let binary = '';
+      for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+      return btoa(binary);
+    }, `/api/resumes/${resumeId}/resume.pdf`);
+    const pdf = await PDFDocument.load(Buffer.from(base64, 'base64'));
+    const fonts = pdf.context
+      .enumerateIndirectObjects()
+      .map(([, object]) => object)
+      .filter((object) => object instanceof PDFDict && object.get(PDFName.of('Type')) === PDFName.of('Font'))
+      .map((dict) => ({ subtype: String(dict.get(PDFName.of('Subtype'))), base: String(dict.get(PDFName.of('BaseFont')) ?? '') }));
+    assert.deepEqual(fonts.filter((f) => f.subtype === '/Type3'), [], `${font}: no Type3 font in ${JSON.stringify(fonts)}`);
+    assert.ok(fonts.some((f) => f.base.replace(/[^a-z0-9]/gi, '').toLowerCase().includes(name.toLowerCase())), `${font}: ${name} is embedded (${JSON.stringify(fonts)})`);
+  }
 });

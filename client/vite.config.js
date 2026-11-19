@@ -8,8 +8,25 @@ import react from '@vitejs/plugin-react';
 // against the manifest the image is tagged from.
 const { version } = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
 
+// The self-hosted site fonts (src/fonts.js, issue #221): fontsource's CSS
+// offers every face as woff2 and then woff, and every browser the app
+// supports takes woff2, so the woff copy is cut before Vite reads the CSS.
+// It then never ships: half the font URLs in the stylesheet, and about 7 MB
+// less in the build.
+const FONTSOURCE_CSS = /[\\/]node_modules[\\/]@fontsource[\\/][^\\/]+[\\/][^\\/]+\.css$/;
+function woff2Only() {
+  return {
+    name: 'resumecms-fontsource-woff2-only',
+    enforce: 'pre',
+    transform(code, id) {
+      if (!FONTSOURCE_CSS.test(id.split('?')[0])) return null;
+      return { code: code.replace(/,\s*url\([^)]*\.woff\)\s*format\('woff'\)/g, ''), map: null };
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [woff2Only(), react()],
   define: {
     __APP_VERSION__: JSON.stringify(version),
   },
@@ -56,6 +73,12 @@ export default defineConfig({
     // serve as immutable (server/src/cacheHeaders.js); without it nothing
     // is, so keep this on.
     manifest: true,
+    // Never inline a font as a data: URL (Vite's default for an asset
+    // under 4 KB, which takes in a font's small subsets): it would sit in
+    // the main stylesheet, base64 that doesn't compress, for every visitor
+    // whether the page uses that font or not (issue #221). Other assets
+    // keep the default.
+    assetsInlineLimit: (file) => (file.endsWith('.woff2') ? false : undefined),
     // Keeps `/*! … */` license comments: Font Awesome's (the button icons,
     // src/landing/actionIcons.js) is the attribution its license asks for.
     rolldownOptions: { output: { comments: { legal: true } } },
