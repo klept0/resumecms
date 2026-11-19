@@ -715,6 +715,24 @@
   color: var(--r-accent, var(--slate));
 }
 
+/* An experience entry's labelled details (issue #223: hours per week,
+   series and grade, salary, supervisor), muted like a credential's details
+   line and kept as plain "Label: value" text for parsers. */
+.r-experience-details {
+  font-family: var(--font-ui);
+  font-size: 0.8125em;
+  color: var(--slate);
+  margin-top: 2px;
+  overflow-wrap: anywhere;
+}
+
+/* One detail with its trailing separator, kept whole; a value too long for
+   the line still breaks (max-width and the parent's overflow-wrap). */
+.r-experience-detail {
+  display: inline-block;
+  max-width: 100%;
+}
+
 .r-experience-tagline {
   font-style: italic;
   color: var(--slate-light);

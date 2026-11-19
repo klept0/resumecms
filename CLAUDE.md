@@ -1426,6 +1426,19 @@ reading; verification links require absolute http/https URLs. Credentials
 are factual context, never rewritten; their number is public but never sent
 to the AI. A tailoring plan can hide an individual credential.
 
+An experience entry may carry labelled details for a US federal (USAJOBS) or
+other formal resume (issue #223): `hoursPerWeek`, `grade` (series and grade),
+`salary`, `supervisor` and `contactSupervisor` (`'yes'`, `'no'`, or `''` for
+not stated), drawn under the company as one plain "Label: value" line
+(`client/src/resume/experienceDetails.js`), only the filled ones.
+`detailsVisibleWeb` and `detailsVisiblePrint` (missing means shown) hide the
+line per surface, and `publicBlocks.js` drops the keys
+(`EXPERIENCE_DETAIL_KEYS`, `server/src/experienceDetails.js`, mirrored
+client-side) from that surface's snapshot, since the snapshot is public. They
+are never AI context: every AI builder and the landing page's
+`experienceRoles()` read named fields, and `ai/experienceDetailsContext.test.js`
+pins that, so keep it if you add a builder that copies a block's data.
+
 ### AI rewrites
 
 `POST /api/ai/rewrite` (`server/src/routes/ai.js`) never writes anything. It

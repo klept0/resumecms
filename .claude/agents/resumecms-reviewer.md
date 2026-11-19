@@ -24,6 +24,9 @@ in prose; check the diff against the ones that apply, especially:
   placeholders, `letterResumeContext()`/`planOutline()`/`resumeOutline()`
   filters kept. Resume credentials are never rewritten or dropped when expired;
   their numbers never enter AI context, and verification links are absolute http/https.
+- An experience entry's federal details (`EXPERIENCE_DETAIL_KEYS`) leave the
+  server only on a surface its `details…` flag allows (`publicBlocks.js`), and
+  never reach the AI.
 - Mirrored pairs changed on both sides (CLAUDE.md names them: landing
   resolver, page meta, block schemas vs `blockData.js`, rewritable types,
   link types, button icons, `NESTABLE_TYPES`, letter dates, the landing
