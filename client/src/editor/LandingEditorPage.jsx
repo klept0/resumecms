@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { api } from '../api.js';
+import { api, resumeApi } from '../api.js';
 import { LandingView } from '../landing/LandingView.jsx';
 import { resolveLanding } from '../landing/resolveLanding.js';
 import { LandingForm } from './LandingForm.jsx';
@@ -10,9 +10,11 @@ import { landingUnsavedWork } from './unsavedWork.js';
 import { LANDING_PAGE, landingShown } from './resumeLinks.js';
 import { applyUploadedFile, applyUploadedImage, uploadSpot } from './landingImages.js';
 import { createLimiter } from './uploadLimit.js';
-import { LANDING_PRESETS } from '../resume/templateRegistry.js';
+import { LANDING_PRESETS, PRESETS } from '../resume/templateRegistry.js';
+import { presetSite } from '../resume/resumePresets.js';
 import { KEEP_STARTING_PAGE, LandingPresetPicker } from './LandingPresetPicker.jsx';
 import { applyPreset, offerPresetsOnOpen, presetMade, presetQuestion } from './landingPresets.js';
+import { offerQuestion, resumePresetOffer } from './presetOffer.js';
 import { TopbarEnd } from './TopbarEnd.jsx';
 import {
   anchorFor,
@@ -63,6 +65,10 @@ export function LandingEditorPage({ resumes, onSwitch, onStatus, onLogout }) {
   const [aiSettings, setAiSettings] = useState(null);
   // "Apply to the default resume" (issue #93): { status, message } or null.
   const [applyState, setApplyState] = useState(null);
+  // The resume preset offered after a landing preset (issue #219): { preset,
+  // resume } or null, and how accepting it went: { status, message } or null.
+  const [resumeOffer, setResumeOffer] = useState(null);
+  const [offerResult, setOfferResult] = useState(null);
   // Which palette the preview shows while the draft has a dark one.
   const [previewScheme, setPreviewScheme] = useState('light');
   const [aiRequests, setAiRequests] = useState({});
@@ -237,6 +243,9 @@ export function LandingEditorPage({ resumes, onSwitch, onStatus, onLogout }) {
       });
       for (const [id, title] of presetMade(current, next)) presetMadeRef.current.set(id, title);
       handleChangeRef.current(next);
+      setOfferResult(null);
+      // `choice` is the landing preset itself (LandingPresetPicker's onPick).
+      setResumeOffer(resumePresetOffer(choice, PRESETS, resumes));
     });
   }
 
@@ -302,6 +311,28 @@ export function LandingEditorPage({ resumes, onSwitch, onStatus, onLogout }) {
         if (mountedRef.current) setApplyState({ status: 'error', message: err.message || "Couldn't apply them" });
       }
     });
+  }
+
+  // The banner's answer (issue #219). Yes applies the resume preset to the
+  // default resume's draft: its site settings as stored, through
+  // presetSite() (what the template picker's "Use this preset" does), saved
+  // with an ordinary PUT, so its touchDraft() runs and nothing is
+  // published. No only closes the banner.
+  async function handleResumeOffer(accept) {
+    const offer = resumeOffer;
+    setResumeOffer(null);
+    if (!accept || !offer) return;
+    const target = resumeApi(offer.resume.id);
+    setOfferResult({ status: 'applying', message: `Applying the "${offer.preset.label}" preset to "${offer.resume.name}"…` });
+    try {
+      const { site } = await target.getSite();
+      await target.putSite(presetSite(site || {}, offer.preset));
+      if (mountedRef.current) {
+        setOfferResult({ status: 'applied', message: `Applied the "${offer.preset.label}" preset to the draft of "${offer.resume.name}". Publish that resume to show it.` });
+      }
+    } catch (err) {
+      if (mountedRef.current) setOfferResult({ status: 'error', message: err.message || "Couldn't apply it" });
+    }
   }
 
   async function handleDiscard() {
@@ -531,6 +562,22 @@ export function LandingEditorPage({ resumes, onSwitch, onStatus, onLogout }) {
 
       <div className="ed-columns" style={{ gridTemplateColumns: '480px 1fr' }}>
         <div className="ed-left-pane">
+          {resumeOffer && (
+            <div className="ed-offer" role="status">
+              <span>{offerQuestion(resumeOffer)} Only its draft changes; nothing is published.</span>
+              <button type="button" className="ed-btn ed-btn-primary ed-btn-sub" onClick={() => handleResumeOffer(true)}>
+                Apply to the resume
+              </button>
+              <button type="button" className="ed-btn ed-btn-ghost ed-btn-sub" onClick={() => handleResumeOffer(false)}>
+                No thanks
+              </button>
+            </div>
+          )}
+          {!resumeOffer && offerResult && (
+            <div className={`ed-offer ed-offer-${offerResult.status}`} role="status">
+              <span>{offerResult.message}</span>
+            </div>
+          )}
           <section className="ed-panel">
             <div className="ed-panel-label ed-landing-panel-label">
               <span>Landing page</span>
