@@ -1781,7 +1781,12 @@ woff fallback from its CSS (every supported browser takes woff2), and
 would sit in the main stylesheet for every visitor. The font files are
 hashed and in the build manifest, so they're served `immutable`. Each
 weight's CSS lists its subsets by `unicode-range`, so a page downloads
-only the files it draws. A change to the fonts stored content is drawn in
+only the files it draws. The OFL asks that its text and each font's
+copyright notice go with every copy, so `fontLicenses()` there writes
+every `@fontsource` dependency's `LICENSE` into `dist/font-licenses.txt`
+(served at `/font-licenses.txt`; written after the bundle so it's never in
+the manifest, hence revalidated), and a browser flow checks each package
+has its section. A change to the fonts stored content is drawn in
 (a family's package, its weights, static for variable) bumps
 `LETTER_RENDER_VERSION` and `CARD_DESIGN_VERSION`, or cached letters and
 share cards keep the old ones; a resume's PDF follows at its next publish.

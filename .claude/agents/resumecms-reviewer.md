@@ -171,7 +171,8 @@ in prose; check the diff against the ones that apply, especially:
   an `@fontsource-variable` package or a Google Fonts link (a variable font
   embeds in a PDF as Type3), a new `FONT_OPTIONS` family has its package
   and weights there, and no public page requests a font from a third
-  party. `vite.config.js` keeps `woff2Only()` and never inlines a font. A
+  party. `vite.config.js` keeps `woff2Only()`, never inlines a font, and
+  ships the fonts' licenses (`fontLicenses()`, `/font-licenses.txt`). A
   change to the fonts stored content is drawn in bumps
   `LETTER_RENDER_VERSION` and `CARD_DESIGN_VERSION`.
 - Store handlers in routes are wrapped in `handle()`; MCP content tools sit
