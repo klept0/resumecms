@@ -1499,8 +1499,10 @@ which `applyProposal()`, `isProposalStale()` and the review diff read from.
 shows (the banner count and outline use it too), and a mounted row panel
 resyncs its instruction and tense when a different request (`requestId`)
 moves under it. The helpers take the block type because an
-experience `block` target doesn't own the description: accepting one keeps
-the current description.
+experience `block` target doesn't own the description, nor the entry's
+labelled details and their two flags (`EXPERIENCE_UNOWNED`, see "Resume
+rendering pipeline"): accepting one keeps the current ones, and an edit to
+them doesn't make it stale.
 
 `REWRITABLE_TYPES` there is an explicit allowlist like `NESTABLE_TYPES`, mirrored
 client-side as `AI_REWRITABLE_TYPES` in `client/src/editor/aiReview.js`. A new

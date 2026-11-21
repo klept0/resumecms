@@ -12,6 +12,8 @@ export const EXPERIENCE_DETAIL_FIELDS = [
   { key: 'contactSupervisor', label: 'May contact supervisor' },
 ];
 export const EXPERIENCE_DETAIL_KEYS = EXPERIENCE_DETAIL_FIELDS.map((field) => field.key);
+// The two flags that hide the line per surface (only `false` hides).
+export const EXPERIENCE_DETAIL_FLAGS = ['detailsVisibleWeb', 'detailsVisiblePrint'];
 const CONTACT_LABELS = new Map([['yes', 'Yes'], ['no', 'No']]);
 
 // A stored contactSupervisor as 'yes', 'no' or '' (not stated). Anything else
