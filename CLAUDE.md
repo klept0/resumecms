@@ -1039,7 +1039,8 @@ template doesn't matter); `ShareCard.jsx` didn't change for that.
 `shareImages.js` (pure) keys both by a hash of what they show: a photo by
 its `data:` URL, a card by `cardContent()` (name, title, photo and only the
 colors and fonts it's drawn in) plus `CARD_DESIGN_VERSION`, which must be
-bumped when `client/src/share/ShareCard.jsx` changes. `shareStore.js`
+bumped when `client/src/share/ShareCard.jsx` changes, or the fonts it's
+drawn in do (see "PDF generation"). `shareStore.js`
 (composed into the store like the landing store) renders cards on the PDF
 queue (`withPdfLock`, the render timeout) as `<pdfDir>/cards/<key>.png`:
 `publish()`, `publishLanding()`, `setLandingEnabled()` and boot call
@@ -1780,7 +1781,10 @@ woff fallback from its CSS (every supported browser takes woff2), and
 would sit in the main stylesheet for every visitor. The font files are
 hashed and in the build manifest, so they're served `immutable`. Each
 weight's CSS lists its subsets by `unicode-range`, so a page downloads
-only the files it draws.
+only the files it draws. A change to the fonts stored content is drawn in
+(a family's package, its weights, static for variable) bumps
+`LETTER_RENDER_VERSION` and `CARD_DESIGN_VERSION`, or cached letters and
+share cards keep the old ones; a resume's PDF follows at its next publish.
 
 Page numbers (issue #206) are opt-in per resume: `site.pdfPageNumbers:
 true` in its site settings (drafted and published with them; missing or

@@ -166,6 +166,14 @@ in prose; check the diff against the ones that apply, especially:
 - The PDF footer (`pdfFooter.js`, page numbers) never takes free text from
   the site settings or the snapshot: only a `#rrggbb` color and a font
   family it picks itself, read from the snapshot `/print` was served.
+- The site fonts stay self-hosted static instances (issue #221):
+  `client/src/fonts.js` imports only `@fontsource/<family>` weights, never
+  an `@fontsource-variable` package or a Google Fonts link (a variable font
+  embeds in a PDF as Type3), a new `FONT_OPTIONS` family has its package
+  and weights there, and no public page requests a font from a third
+  party. `vite.config.js` keeps `woff2Only()` and never inlines a font. A
+  change to the fonts stored content is drawn in bumps
+  `LETTER_RENDER_VERSION` and `CARD_DESIGN_VERSION`.
 - Store handlers in routes are wrapped in `handle()`; MCP content tools sit
   in `CONTENT_TOOLS`.
 - AI output schemas stay strict-mode valid (`additionalProperties: false`,

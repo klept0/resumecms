@@ -758,7 +758,13 @@ flow('a published PDF embeds its fonts as TrueType, not Type3', async ({ page })
     assert.equal(put.status, 200, `${font}: the site setting saves`);
     const published = await api(page, `/api/resumes/${resumeId}/publish`, { method: 'POST' });
     assert.equal(published.status, 200, `${font}: publishes`);
-    assert.ok(!published.body.pdfPending, `${font}: the PDF rendered within the publish`);
+    // A publish answers pdfPending when its render takes longer than it
+    // waits (a slow machine); the render carries on, so wait for it, then
+    // check the file is this publish's and not the font before's.
+    const statusUrl = `/api/resumes/${resumeId}/publish/status`;
+    await page.waitForFunction(async (url) => (await (await fetch(url)).json()).pdfPending === false, { polling: 250, timeout: 40000 }, statusUrl);
+    const status = await api(page, statusUrl);
+    assert.equal(status.body.pdfStale, false, `${font}: the PDF was rendered from this publish`);
     const base64 = await page.evaluate(async (url) => {
       const bytes = new Uint8Array(await (await fetch(url)).arrayBuffer());
       let binary = '';
