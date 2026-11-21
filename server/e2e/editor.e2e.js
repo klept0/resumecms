@@ -7,7 +7,7 @@
 // Run with `npm run test:browser` from server/, after `npm run build` in
 // client/. A failed flow leaves a screenshot (see saveScreenshot()).
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { after, before, test } from 'node:test';
 import { PASSWORD, REPO_ROOT, USERNAME, launchBrowser, saveScreenshot, startServer } from './harness.js';
@@ -370,7 +370,17 @@ flow('applies a resume preset by keyboard, and a reload keeps it', async ({ page
   const picker = '[role="dialog"][aria-labelledby="ed-template-picker-title"]';
   const modes = `${picker} .ed-template-picker-modes`;
   const radios = `${picker} [role="radiogroup"][aria-label="By profession"] [role="radio"]`;
+  const looks = `${picker} [role="radiogroup"][aria-label="By look"] [role="radio"]`;
   const useButton = `${picker} .ed-modal-actions .ed-btn-primary`;
+  const checkedIn = (group) => page.$$eval(group, (els) => els.filter((el) => el.getAttribute('aria-checked') === 'true').length);
+  const tabStopsIn = (group) => page.$$eval(group, (els) => els.filter((el) => el.tabIndex === 0).length);
+  // The presets as the picker groups them (issue #219): by `group` in their
+  // template.json, each group in label order.
+  const presetsDir = path.join(REPO_ROOT, 'templates', 'presets');
+  const allPresets = readdirSync(presetsDir)
+    .map((id) => JSON.parse(readFileSync(path.join(presetsDir, id, 'template.json'), 'utf8')))
+    .sort((a, b) => a.label.localeCompare(b.label));
+  const lookPresets = allPresets.filter((preset) => preset.group !== 'profession');
 
   // Default mode is unchanged. Reach Presets by Tab from Header & layout,
   // then Tab into the unselected list, whose first option is a tab stop.
@@ -388,6 +398,26 @@ flow('applies a resume preset by keyboard, and a reload keeps it', async ({ page
   assert.equal(await page.$eval(`${radios}:first-child`, (el) => el.getAttribute('aria-checked')), 'false');
   assert.equal(await page.$eval(useButton, (el) => el.disabled), true, 'focus alone does not select a preset');
 
+  // The second group, "By look", is the next tab stop: every other preset,
+  // one choice between the two groups.
+  const optionLabels = (group) => page.$$eval(`${group} .ed-template-picker-option-label`, (els) => els.map((el) => el.textContent));
+  assert.deepEqual(await optionLabels(looks), lookPresets.map((preset) => preset.label));
+  assert.equal((await optionLabels(radios)).length, allPresets.length - lookPresets.length);
+  await page.keyboard.press('Tab');
+  assert.equal(await page.$eval(`${looks}:first-child`, (el) => el === document.activeElement), true);
+  assert.equal(await checkedIn(looks), 0, 'focus alone does not select there either');
+  await page.keyboard.press('Space');
+  assert.equal(await page.$eval(`${looks}:first-child`, (el) => el.getAttribute('aria-checked')), 'true');
+  assert.equal(await page.$eval(useButton, (el) => el.disabled), false);
+  await page.waitForSelector(`${picker} .ed-template-picker-preview .r-layout-${lookPresets[0].layout}`);
+  assert.deepEqual([await checkedIn(radios), await checkedIn(looks)], [0, 1]);
+  assert.deepEqual([await tabStopsIn(radios), await tabStopsIn(looks)], [1, 1]);
+  // Back to the first group, where choosing one clears the look's.
+  await page.keyboard.down('Shift');
+  await page.keyboard.press('Tab');
+  await page.keyboard.up('Shift');
+  assert.equal(await page.$eval(`${radios}:first-child`, (el) => el === document.activeElement), true);
+
   const labels = await page.$$eval(`${radios} .ed-template-picker-option-label`, (els) => els.map((el) => el.textContent));
   const target = labels.indexOf('Law & finance');
   assert.ok(target > 0, 'Law & finance follows the first option');
@@ -395,6 +425,8 @@ flow('applies a resume preset by keyboard, and a reload keeps it', async ({ page
   assert.equal(await page.evaluate(() => document.activeElement.querySelector('.ed-template-picker-option-label')?.textContent), 'Law & finance');
   assert.equal(await page.evaluate(() => document.activeElement.getAttribute('aria-checked')), 'true');
   assert.equal(await page.$eval(useButton, (el) => el.disabled), false);
+  assert.deepEqual([await checkedIn(radios), await checkedIn(looks)], [1, 0], 'one preset is chosen, across both groups');
+  assert.deepEqual([await tabStopsIn(radios), await tabStopsIn(looks)], [1, 1]);
   await page.waitForSelector(`${picker} .ed-template-picker-preview .r-layout-small-caps`);
   assert.deepEqual(writes, [], 'browsing has saved nothing');
 
@@ -779,6 +811,12 @@ flow('applying a landing preset offers its resume preset, and only a yes applies
   const resumeId = await defaultResumeId(page);
   const sitePath = `/api/resumes/${resumeId}/site`;
   const defaultResume = async () => (await api(page, '/api/resumes')).body.resumes.find((r) => r.id === resumeId);
+  const isDirty = async () => (await api(page, `/api/resumes/${resumeId}/publish/status`)).body.isDirty;
+  // Published first, so the draft starts with nothing unpublished whatever
+  // the flows before left in it, and "unpublished changes" below is this
+  // flow's doing.
+  assert.equal((await api(page, `/api/resumes/${resumeId}/publish`, { method: 'POST' })).status, 200);
+  assert.equal(await isDirty(), false);
   const before = (await api(page, sitePath)).body.site;
   const publishedAt = (await defaultResume()).publishedAt;
   const writes = [];
@@ -793,18 +831,32 @@ flow('applying a landing preset offers its resume preset, and only a yes applies
   await applyLandingPreset(page, expectDialog, 'healthcare');
   await offerBanner(page, 'Use the "Healthcare" preset on your resume');
   assert.deepEqual(await offerButtons(), ['Apply to the resume', 'No thanks']);
-  await (await page.waitForSelector(offerButton('No thanks'))).focus();
+  // The new banner has focus, described by its question; its buttons are
+  // the next tab stops.
+  await page.waitForFunction(() => document.activeElement?.classList.contains('ed-offer'));
+  assert.equal((await focused(page)).label, 'Resume preset');
+  assert.match(
+    await page.evaluate(() => document.getElementById(document.activeElement.getAttribute('aria-describedby')).textContent),
+    /^Use the "Healthcare" preset on your resume/
+  );
+  await page.keyboard.press('Tab');
+  assert.equal((await focused(page)).text, 'Apply to the resume');
+  await page.keyboard.press('Tab');
+  assert.equal((await focused(page)).text, 'No thanks');
   await page.keyboard.press('Enter');
   await page.waitForFunction(() => !document.querySelector('.ed-offer'));
   assert.equal((await focused(page)).text, 'Start from a preset…', 'focus returns to the preset button');
   assert.deepEqual(writes, [], 'No thanks sends no resume save');
   assert.deepEqual((await api(page, sitePath)).body.site, before, 'the resume is unchanged');
+  assert.equal(await isDirty(), false, 'and has nothing unpublished');
 
   // Trades, then Apply to the resume.
   await applyLandingPreset(page, expectDialog, 'trades');
   await offerBanner(page, 'Use the "Trades" preset on your resume');
   const applied = putResponse(page, sitePath);
-  await (await page.waitForSelector(offerButton('Apply to the resume'))).focus();
+  await page.waitForFunction(() => document.activeElement?.classList.contains('ed-offer'));
+  await page.keyboard.press('Tab');
+  assert.equal((await focused(page)).text, 'Apply to the resume');
   await page.keyboard.press('Enter');
   assert.equal((await applied).status(), 200);
   await offerBanner(page, 'Applied the "Trades" preset to the draft of');
@@ -817,8 +869,7 @@ flow('applying a landing preset offers its resume preset, and only a yes applies
   assert.equal(body.site.layout, preset.layout);
   assert.deepEqual(body.site.colors, preset.colors);
   assert.equal(writes.length, 1, 'applying sends one site save');
-  const status = (await api(page, `/api/resumes/${resumeId}/publish/status`)).body;
-  assert.equal(status.isDirty, true, 'the resume draft has unpublished changes');
+  assert.equal(await isDirty(), true, 'the resume draft has unpublished changes');
   assert.equal((await defaultResume()).publishedAt, publishedAt, 'the resume was not published');
 
   await (await page.waitForSelector(offerButton('Dismiss'))).focus();

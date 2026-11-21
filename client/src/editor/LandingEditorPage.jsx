@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { api, resumeApi } from '../api.js';
 import { LandingView } from '../landing/LandingView.jsx';
 import { resolveLanding } from '../landing/resolveLanding.js';
@@ -86,6 +86,7 @@ export function LandingEditorPage({ resumes, onSwitch, onStatus, onLogout }) {
   const busyRef = useRef(0);
   // The offer's banner, and the button focus returns to when it closes.
   const offerRef = useRef(null);
+  const offerTextId = useId();
   const presetButtonRef = useRef(null);
   // The sections holding text that's only on screen (a media link that
   // doesn't parse yet, an AI instruction typed or sent), counted per field,
@@ -133,6 +134,14 @@ export function LandingEditorPage({ resumes, onSwitch, onStatus, onLogout }) {
 
   // A save still waiting goes out on unmount (a switch it didn't start).
   useEffect(() => () => saves.runWaiting(), [saves]);
+
+  // A new offer takes focus: its banner is above the button the preset
+  // dialog hands focus back to, where Tab would never reach it, and text
+  // that arrives with its live region isn't reliably read out. Focused, the
+  // banner is read with its question (aria-describedby).
+  useEffect(() => {
+    if (resumeOffer?.status === 'asking') offerRef.current?.focus();
+  }, [resumeOffer]);
 
   // A suggestion whose spot is gone (its section, card or item removed) is
   // dropped rather than left where nothing shows it.
@@ -276,10 +285,10 @@ export function LandingEditorPage({ resumes, onSwitch, onStatus, onLogout }) {
     }
   }
 
-  // Busy until the returned function is called. Counted, because two
-  // operations can overlap (the Look group's apply isn't disabled by
-  // `busy`, and waits for whatever is tracked): the first to finish must
-  // not enable the ways out while the other is still going.
+  // Busy until the returned function is called. Everything that holds it
+  // is disabled while it's held, so two don't overlap; it's counted all the
+  // same, so that one that did couldn't enable the ways out while the other
+  // is still going.
   function holdBusy() {
     busyRef.current += 1;
     setBusy(true);
@@ -314,6 +323,7 @@ export function LandingEditorPage({ resumes, onSwitch, onStatus, onLogout }) {
   // server reads the stored draft, so every edit is saved first, and a
   // failed save stops it rather than copying something else.
   function handleApplyStyle() {
+    if (busy) return;
     const target = resumes.find((r) => r.isDefault);
     const name = target ? `"${target.name}"` : 'your default resume';
     const question =
@@ -323,7 +333,9 @@ export function LandingEditorPage({ resumes, onSwitch, onStatus, onLogout }) {
     afterSaving(async () => {
       setApplyState({ status: 'applying' });
       try {
-        await api.applyLandingStyle();
+        // Tracked: it writes to a resume's draft, so leaving waits for it
+        // (see handleOfferAnswer).
+        await saves.track(api.applyLandingStyle());
         if (mountedRef.current) {
           setApplyState({ status: 'applied', message: `Copied into the draft of ${name}. Publish that resume to show them on it.` });
         }
@@ -599,9 +611,12 @@ export function LandingEditorPage({ resumes, onSwitch, onStatus, onLogout }) {
               className={`ed-offer ed-offer-${resumeOffer.status}`}
               role="group"
               aria-label="Resume preset"
+              aria-describedby={offerTextId}
               tabIndex={-1}
             >
-              <span role="status">{offerMessage(resumeOffer)}</span>
+              <span id={offerTextId} role="status">
+                {offerMessage(resumeOffer)}
+              </span>
               {(resumeOffer.status === 'asking' || resumeOffer.status === 'failed') && (
                 <>
                   <button type="button" className="ed-btn ed-btn-primary ed-btn-sub" onClick={() => handleOfferAnswer(true)} disabled={busy}>
@@ -648,6 +663,7 @@ export function LandingEditorPage({ resumes, onSwitch, onStatus, onLogout }) {
                 look={{
                   onApply: handleApplyStyle,
                   applyState,
+                  busy,
                   preview: { draft: previewDraft, context: loaded.context, scheme: previewScheme },
                 }}
               />
