@@ -11,10 +11,9 @@ import { LANDING_PAGE, landingShown } from './resumeLinks.js';
 import { applyUploadedFile, applyUploadedImage, uploadSpot } from './landingImages.js';
 import { createLimiter } from './uploadLimit.js';
 import { LANDING_PRESETS, PRESETS } from '../resume/templateRegistry.js';
-import { presetSite } from '../resume/resumePresets.js';
 import { KEEP_STARTING_PAGE, LandingPresetPicker } from './LandingPresetPicker.jsx';
 import { applyPreset, offerPresetsOnOpen, presetMade, presetQuestion } from './landingPresets.js';
-import { offerQuestion, resumePresetOffer } from './presetOffer.js';
+import { applyResumeOffer, offerMessage, resumePresetOffer } from './presetOffer.js';
 import { TopbarEnd } from './TopbarEnd.jsx';
 import {
   anchorFor,
@@ -66,9 +65,9 @@ export function LandingEditorPage({ resumes, onSwitch, onStatus, onLogout }) {
   // "Apply to the default resume" (issue #93): { status, message } or null.
   const [applyState, setApplyState] = useState(null);
   // The resume preset offered after a landing preset (issue #219): { preset,
-  // resume } or null, and how accepting it went: { status, message } or null.
+  // resume, status, error? } or null, `status` being 'asking', 'applying',
+  // 'applied' or 'failed' (presetOffer.js's offerMessage()).
   const [resumeOffer, setResumeOffer] = useState(null);
-  const [offerResult, setOfferResult] = useState(null);
   // Which palette the preview shows while the draft has a dark one.
   const [previewScheme, setPreviewScheme] = useState('light');
   const [aiRequests, setAiRequests] = useState({});
@@ -83,6 +82,11 @@ export function LandingEditorPage({ resumes, onSwitch, onStatus, onLogout }) {
   const landingRef = useRef(landing);
   landingRef.current = landing;
   const mountedRef = useRef(true);
+  // How many operations hold the page busy (holdBusy()).
+  const busyRef = useRef(0);
+  // The offer's banner, and the button focus returns to when it closes.
+  const offerRef = useRef(null);
+  const presetButtonRef = useRef(null);
   // The sections holding text that's only on screen (a media link that
   // doesn't parse yet, an AI instruction typed or sent), counted per field,
   // so a preset keeps them (applyPreset()'s `typed`).
@@ -243,9 +247,9 @@ export function LandingEditorPage({ resumes, onSwitch, onStatus, onLogout }) {
       });
       for (const [id, title] of presetMade(current, next)) presetMadeRef.current.set(id, title);
       handleChangeRef.current(next);
-      setOfferResult(null);
       // `choice` is the landing preset itself (LandingPresetPicker's onPick).
-      setResumeOffer(resumePresetOffer(choice, PRESETS, resumes));
+      const offer = resumePresetOffer(choice, PRESETS, resumes);
+      setResumeOffer(offer && { ...offer, status: 'asking' });
     });
   }
 
@@ -259,7 +263,7 @@ export function LandingEditorPage({ resumes, onSwitch, onStatus, onLogout }) {
   // error shown, so nothing goes on without an edit unnoticed. Leaving asks
   // instead (leaveFor).
   async function afterSaving(next) {
-    setBusy(true);
+    const release = holdBusy();
     try {
       const failed = await saves.flush();
       if (failed.length) {
@@ -268,8 +272,24 @@ export function LandingEditorPage({ resumes, onSwitch, onStatus, onLogout }) {
       }
       await next();
     } finally {
-      if (mountedRef.current) setBusy(false);
+      release();
     }
+  }
+
+  // Busy until the returned function is called. Counted, because two
+  // operations can overlap (the Look group's apply isn't disabled by
+  // `busy`, and waits for whatever is tracked): the first to finish must
+  // not enable the ways out while the other is still going.
+  function holdBusy() {
+    busyRef.current += 1;
+    setBusy(true);
+    let held = true;
+    return () => {
+      if (!held) return;
+      held = false;
+      busyRef.current -= 1;
+      if (mountedRef.current && busyRef.current === 0) setBusy(false);
+    };
   }
 
   function handlePublish() {
@@ -314,25 +334,33 @@ export function LandingEditorPage({ resumes, onSwitch, onStatus, onLogout }) {
   }
 
   // The banner's answer (issue #219). Yes applies the resume preset to the
-  // default resume's draft: its site settings as stored, through
-  // presetSite() (what the template picker's "Use this preset" does), saved
-  // with an ordinary PUT, so its touchDraft() runs and nothing is
-  // published. No only closes the banner.
-  async function handleResumeOffer(accept) {
+  // default resume's draft (applyResumeOffer(): nothing is published). It
+  // writes to a resume's draft from this page, so it's tracked on the save
+  // queue before its first await and holds the page busy: every way out
+  // waits for it (the guard's flush; a failure it waited on is asked about),
+  // and no second apply or preset starts meanwhile. If the page went
+  // without the guard, it stops before writing. No, or Dismiss once it's
+  // applied, only closes the banner. The buttons go when they're answered,
+  // so focus moves first: to the banner while it applies and reports, and
+  // to "Start from a preset…" when it closes.
+  function handleOfferAnswer(accept) {
     const offer = resumeOffer;
-    setResumeOffer(null);
-    if (!accept || !offer) return;
-    const target = resumeApi(offer.resume.id);
-    setOfferResult({ status: 'applying', message: `Applying the "${offer.preset.label}" preset to "${offer.resume.name}"…` });
-    try {
-      const { site } = await target.getSite();
-      await target.putSite(presetSite(site || {}, offer.preset));
-      if (mountedRef.current) {
-        setOfferResult({ status: 'applied', message: `Applied the "${offer.preset.label}" preset to the draft of "${offer.resume.name}". Publish that resume to show it.` });
-      }
-    } catch (err) {
-      if (mountedRef.current) setOfferResult({ status: 'error', message: err.message || "Couldn't apply it" });
+    if (!offer || busy || offer.status === 'applying') return;
+    if (!accept) {
+      presetButtonRef.current?.focus();
+      setResumeOffer(null);
+      return;
     }
+    offerRef.current?.focus();
+    setResumeOffer({ ...offer, status: 'applying' });
+    const release = holdBusy();
+    saves
+      .track(applyResumeOffer(offer, resumeApi(offer.resume.id), () => mountedRef.current))
+      .then(
+        () => mountedRef.current && setResumeOffer({ ...offer, status: 'applied' }),
+        (err) => mountedRef.current && setResumeOffer({ ...offer, status: 'failed', error: err?.message })
+      )
+      .finally(release);
   }
 
   async function handleDiscard() {
@@ -344,6 +372,9 @@ export function LandingEditorPage({ resumes, onSwitch, onStatus, onLogout }) {
       setLanding(draft);
       setStatus(current);
       setError(null);
+      // An offer still open came with a preset that's just been discarded;
+      // one already applied to the resume stays reported.
+      setResumeOffer((offer) => (offer?.status === 'applied' ? offer : null));
     } catch (err) {
       setError(err.message || 'Discard failed');
     }
@@ -458,11 +489,11 @@ export function LandingEditorPage({ resumes, onSwitch, onStatus, onLogout }) {
   // Leaves through the guard: saves first (an upload too), then asks about
   // a failed save and about suggestions not accepted yet.
   async function leaveFor(next) {
-    setBusy(true);
+    const release = holdBusy();
     try {
       await guard.leave(next);
     } finally {
-      if (mountedRef.current) setBusy(false);
+      release();
     }
   }
 
@@ -563,26 +594,42 @@ export function LandingEditorPage({ resumes, onSwitch, onStatus, onLogout }) {
       <div className="ed-columns" style={{ gridTemplateColumns: '480px 1fr' }}>
         <div className="ed-left-pane">
           {resumeOffer && (
-            <div className="ed-offer" role="status">
-              <span>{offerQuestion(resumeOffer)} Only its draft changes; nothing is published.</span>
-              <button type="button" className="ed-btn ed-btn-primary ed-btn-sub" onClick={() => handleResumeOffer(true)}>
-                Apply to the resume
-              </button>
-              <button type="button" className="ed-btn ed-btn-ghost ed-btn-sub" onClick={() => handleResumeOffer(false)}>
-                No thanks
-              </button>
-            </div>
-          )}
-          {!resumeOffer && offerResult && (
-            <div className={`ed-offer ed-offer-${offerResult.status}`} role="status">
-              <span>{offerResult.message}</span>
+            <div
+              ref={offerRef}
+              className={`ed-offer ed-offer-${resumeOffer.status}`}
+              role="group"
+              aria-label="Resume preset"
+              tabIndex={-1}
+            >
+              <span role="status">{offerMessage(resumeOffer)}</span>
+              {(resumeOffer.status === 'asking' || resumeOffer.status === 'failed') && (
+                <>
+                  <button type="button" className="ed-btn ed-btn-primary ed-btn-sub" onClick={() => handleOfferAnswer(true)} disabled={busy}>
+                    {resumeOffer.status === 'failed' ? 'Try again' : 'Apply to the resume'}
+                  </button>
+                  <button type="button" className="ed-btn ed-btn-ghost ed-btn-sub" onClick={() => handleOfferAnswer(false)} disabled={busy}>
+                    No thanks
+                  </button>
+                </>
+              )}
+              {resumeOffer.status === 'applied' && (
+                <button type="button" className="ed-btn ed-btn-ghost ed-btn-sub" onClick={() => handleOfferAnswer(false)} disabled={busy}>
+                  Dismiss
+                </button>
+              )}
             </div>
           )}
           <section className="ed-panel">
             <div className="ed-panel-label ed-landing-panel-label">
               <span>Landing page</span>
               {LANDING_PRESETS.length > 0 && (
-                <button type="button" className="ed-btn ed-btn-ghost ed-btn-sub" onClick={() => setPresetPicker('chosen')} disabled={busy}>
+                <button
+                  ref={presetButtonRef}
+                  type="button"
+                  className="ed-btn ed-btn-ghost ed-btn-sub"
+                  onClick={() => setPresetPicker('chosen')}
+                  disabled={busy}
+                >
                   Start from a preset…
                 </button>
               )}

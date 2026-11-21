@@ -1178,8 +1178,14 @@
   color: var(--signal);
 }
 
-.ed-offer-error span {
+.ed-offer-failed span {
   color: var(--warn);
+}
+
+/* Focus moves to the banner itself while its buttons are away. */
+.ed-offer:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 2px;
 }
 
 .ed-tailor-bar-failed {
