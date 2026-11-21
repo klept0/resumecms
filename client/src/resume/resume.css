@@ -1015,6 +1015,21 @@
   opacity: 0.35;
 }
 
+/* Editor preview: an experience entry's details line that the web page or
+   the PDF leaves out (detailsVisibleWeb / detailsVisiblePrint), dimmed like
+   a hidden bullet. */
+.r-experience-details-dimmed {
+  opacity: 0.35;
+}
+
+/* The web page's Print button prints the page as it is, so a details line
+   shown on the web but not in print leaves the paper here. */
+@media print {
+  .r-experience-details-print-hidden {
+    display: none;
+  }
+}
+
 /* Screen display (not print) */
 @media screen {
   .r-mode-web {

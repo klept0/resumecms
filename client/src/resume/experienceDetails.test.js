@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { EXPERIENCE_DETAIL_FIELDS, EXPERIENCE_DETAIL_KEYS, experienceDetails, hasExperienceDetails } from './experienceDetails.js';
+import {
+  EXPERIENCE_DETAIL_FIELDS, EXPERIENCE_DETAIL_KEYS, contactAnswer, experienceDetails, experienceDetailsLine, hasExperienceDetails,
+} from './experienceDetails.js';
 import { EXPERIENCE_DETAIL_KEYS as SERVER_KEYS } from '../../../server/src/experienceDetails.js';
 
 test('details come out in field order with their labels', () => {
@@ -33,6 +35,59 @@ test('contactSupervisor shows only as Yes or No', () => {
   assert.equal(experienceDetails({ contactSupervisor: 'no' })[0].value, 'No');
   assert.deepEqual(experienceDetails({ contactSupervisor: 'maybe' }), []);
   assert.deepEqual(experienceDetails({ contactSupervisor: '' }), []);
+});
+
+test('a contactSupervisor naming an inherited object key is not an answer', () => {
+  // blockData.js takes any string, and a lookup in a plain object would
+  // answer these with an object or a function, which React can't draw.
+  for (const raw of ['__proto__', 'constructor', 'toString', 'hasOwnProperty', 'valueOf', '__defineGetter__']) {
+    assert.deepEqual(experienceDetails({ contactSupervisor: raw }), [], raw);
+    assert.equal(contactAnswer(raw), '', raw);
+  }
+  for (const detail of experienceDetails({ hoursPerWeek: '__proto__', contactSupervisor: 'yes' })) {
+    assert.equal(typeof detail.value, 'string');
+  }
+});
+
+test('contactAnswer reads a stored answer as the editor and the line both show it', () => {
+  assert.equal(contactAnswer('yes'), 'yes');
+  assert.equal(contactAnswer(' No '), 'no');
+  assert.equal(contactAnswer('maybe'), '');
+  assert.equal(contactAnswer(''), '');
+  assert.equal(contactAnswer(undefined), '');
+  assert.equal(contactAnswer(true), '');
+});
+
+test('the line follows each surface\'s flag, a missing one meaning shown', () => {
+  const data = { hoursPerWeek: '40', supervisor: 'Jane Doe' };
+  const details = experienceDetails(data);
+  const none = { details: [], dimmed: false, printHidden: false };
+  const shown = { details, dimmed: false, printHidden: false };
+
+  for (const mode of ['web', 'print', 'preview']) {
+    assert.deepEqual(experienceDetailsLine(data, mode), shown, mode);
+    assert.deepEqual(experienceDetailsLine({ ...data, detailsVisibleWeb: true, detailsVisiblePrint: true }, mode), shown, mode);
+    // Only `false` hides: null and a non-boolean read as shown, as in publicBlocks.js.
+    assert.deepEqual(experienceDetailsLine({ ...data, detailsVisibleWeb: null, detailsVisiblePrint: 0 }, mode), shown, mode);
+    assert.deepEqual(experienceDetailsLine({ detailsVisibleWeb: false }, mode), none, mode);
+    assert.deepEqual(experienceDetailsLine(undefined, mode), none, mode);
+  }
+  assert.deepEqual(experienceDetailsLine(data), shown, 'web is the default mode');
+
+  const webOnly = { ...data, detailsVisiblePrint: false };
+  assert.deepEqual(experienceDetailsLine(webOnly, 'web'), { details, dimmed: false, printHidden: true });
+  assert.deepEqual(experienceDetailsLine(webOnly, 'print'), none);
+  assert.deepEqual(experienceDetailsLine(webOnly, 'preview'), { details, dimmed: true, printHidden: false });
+
+  const printOnly = { ...data, detailsVisibleWeb: false };
+  assert.deepEqual(experienceDetailsLine(printOnly, 'web'), none);
+  assert.deepEqual(experienceDetailsLine(printOnly, 'print'), shown);
+  assert.deepEqual(experienceDetailsLine(printOnly, 'preview'), { details, dimmed: true, printHidden: false });
+
+  const neither = { ...data, detailsVisibleWeb: false, detailsVisiblePrint: false };
+  assert.deepEqual(experienceDetailsLine(neither, 'web'), none);
+  assert.deepEqual(experienceDetailsLine(neither, 'print'), none);
+  assert.deepEqual(experienceDetailsLine(neither, 'preview'), { details, dimmed: true, printHidden: false });
 });
 
 test('missing data gives no details', () => {

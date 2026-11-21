@@ -4,7 +4,7 @@ import {
   DndContext, DragOverlay, PointerSensor, useDndContext, useDraggable, useDroppable, useSensor, useSensors,
 } from '@dnd-kit/core';
 import { MAX_BULLET_DEPTH, normalizeBullet } from '../../resume/bulletUtils.js';
-import { experienceDetails } from '../../resume/experienceDetails.js';
+import { contactAnswer, experienceDetails } from '../../resume/experienceDetails.js';
 import { VisibilityToggle } from '../VisibilityToggle.jsx';
 import { targetKey } from '../aiReview.js';
 import { useRowPanelOpen } from '../useRowPanelOpen.js';
@@ -339,7 +339,7 @@ export function ExperienceForm({ data, onChange, aiPanel = null, aiEntries = nul
             <span>May we contact your supervisor?</span>
             <select
               className="ed-input"
-              value={data.contactSupervisor === 'yes' || data.contactSupervisor === 'no' ? data.contactSupervisor : ''}
+              value={contactAnswer(data.contactSupervisor)}
               onChange={(e) => onChange({ ...data, contactSupervisor: e.target.value })}
             >
               <option value="">Not stated</option>

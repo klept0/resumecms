@@ -781,6 +781,8 @@ flow('fills an entry\'s federal details and hides them from the web page', async
   hidden.catch(() => {});
   await webVisible.click();
   assert.equal((await hidden).status(), 200);
+  // The preview keeps the line, dimmed, like a bullet one surface hides.
+  await page.waitForSelector('.r-experience-details.r-experience-details-dimmed');
 
   const published = await api(page, `/api/resumes/${resumeId}/publish`, { method: 'POST' });
   assert.equal(published.status, 200);
